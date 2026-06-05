@@ -1,0 +1,50 @@
+name: get-downloads
+
+on:
+  schedule:
+    - cron: "0 23 * * *"
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  update-downloads:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Collect downloads
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+        run: cargo run --release -- $API_KEY
+
+      - name: Commit changes
+        env:
+          GIT_USER_NAME: ${{ secrets.GIT_USER_NAME }}
+          GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
+        run: |
+          git config --global user.email "$GIT_EMAIL"
+          git config --global user.name "$GIT_USER_NAME"
+          git add stats.json
+          git add downloads_accumulated.png
+          git add downloads_per_day.png
+          git commit -m "Updated download counter" || echo "Nothing to commit"
+          git push
