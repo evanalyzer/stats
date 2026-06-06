@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 
-const GITHUB_REPO: &str = "evanalyzer/evenalyzer";
+const GITHUB_REPO: &str = "evanalyzer/evanalyzer";
 const IMAGEJ_STATS_URL: &str = "https://sites.imagej.net/stats.json";
 const IMAGEJ_PLUGIN_KEY: &str = "evanalyzer";
 const STATS_FILE: &str = "stats.json";
