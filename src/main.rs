@@ -11,6 +11,7 @@ const GITHUB_REPO: &str = "evanalyzer/evanalyzer";
 const IMAGEJ_STATS_URL: &str = "https://sites.imagej.net/stats.json";
 const IMAGEJ_PLUGIN_KEY: &str = "evanalyzer";
 const STATS_FILE: &str = "stats.json";
+const EXCLUDED_TAG: &str = "app-deps";
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct DayRecord {
@@ -19,6 +20,7 @@ struct DayRecord {
 
 #[derive(Deserialize)]
 struct GithubRelease {
+    tag_name: String,
     assets: Vec<GithubAsset>,
 }
 
@@ -62,6 +64,9 @@ fn fetch_github_total(token: &str) -> Result<u64> {
 
         let releases: Vec<GithubRelease> = response.json()?;
         for release in &releases {
+            if release.tag_name == EXCLUDED_TAG {
+                continue;
+            }
             for asset in &release.assets {
                 total += asset.download_count;
             }
