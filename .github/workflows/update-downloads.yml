@@ -44,6 +44,7 @@ jobs:
           git config --global user.email "$GIT_EMAIL"
           git config --global user.name "$GIT_USER_NAME"
           git add stats.json
+          git add assets.json
           git add downloads_accumulated.png
           git add downloads_per_day.png
           git commit -m "Updated download counter" || echo "Nothing to commit"

@@ -11,6 +11,7 @@ const GITHUB_REPO: &str = "evanalyzer/evanalyzer";
 const IMAGEJ_STATS_URL: &str = "https://sites.imagej.net/stats.json";
 const IMAGEJ_PLUGIN_KEY: &str = "evanalyzer";
 const STATS_FILE: &str = "stats.json";
+const ASSETS_FILE: &str = "assets.json";
 const EXCLUDED_TAG: &str = "app-deps";
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -26,14 +27,16 @@ struct GithubRelease {
 
 #[derive(Deserialize)]
 struct GithubAsset {
+    id: u64,
     download_count: u64,
 }
 
-fn fetch_github_total(token: &str) -> Result<u64> {
+/// Returns the current download count of every release asset, keyed by asset id.
+fn fetch_github_assets(token: &str) -> Result<BTreeMap<u64, u64>> {
     let client = Client::builder()
         .user_agent("evanalyzer-stats")
         .build()?;
-    let mut total = 0u64;
+    let mut assets = BTreeMap::new();
     let mut url = format!(
         "https://api.github.com/repos/{}/releases?per_page=100",
         GITHUB_REPO
@@ -68,7 +71,7 @@ fn fetch_github_total(token: &str) -> Result<u64> {
                 continue;
             }
             for asset in &release.assets {
-                total += asset.download_count;
+                assets.insert(asset.id, asset.download_count);
             }
         }
 
@@ -78,7 +81,16 @@ fn fetch_github_total(token: &str) -> Result<u64> {
         }
     }
 
-    Ok(total)
+    Ok(assets)
+}
+
+/// Downloads gained since the last run. Assets missing from `current` (deleted
+/// releases) are ignored, so removing old releases never lowers the total.
+fn new_downloads(last_seen: &BTreeMap<u64, u64>, current: &BTreeMap<u64, u64>) -> u64 {
+    current
+        .iter()
+        .map(|(id, &count)| count.saturating_sub(last_seen.get(id).copied().unwrap_or(0)))
+        .sum()
 }
 
 fn parse_next_link(header: &str) -> Option<String> {
@@ -240,8 +252,7 @@ fn main() -> Result<()> {
         .to_string();
 
     println!("Fetching GitHub releases for {}...", GITHUB_REPO);
-    let standalone_total = fetch_github_total(&token)?;
-    println!("Standalone total downloads: {}", standalone_total);
+    let assets = fetch_github_assets(&token)?;
 
     println!("Fetching ImageJ plugin stats...");
     let imagej_by_day = fetch_imagej_by_day()?;
@@ -253,14 +264,29 @@ fn main() -> Result<()> {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
+    let last_seen: Option<BTreeMap<u64, u64>> = fs::read_to_string(ASSETS_FILE)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok());
+    let previous_total = stats.values().last().map(|r| r.standalone_accumulated);
+
+    let standalone_total = match (previous_total, last_seen) {
+        (Some(prev), Some(seen)) => prev + new_downloads(&seen, &assets) as i64,
+        // No asset baseline yet: keep the previous total instead of re-adding
+        // all downloads, and start tracking from the current counts.
+        (Some(prev), None) => prev,
+        (None, _) => assets.values().sum::<u64>() as i64,
+    };
+    println!("Standalone total downloads: {}", standalone_total);
+
     stats.insert(
         today_str,
         DayRecord {
-            standalone_accumulated: standalone_total as i64,
+            standalone_accumulated: standalone_total,
         },
     );
 
     fs::write(STATS_FILE, serde_json::to_string_pretty(&stats)?)?;
+    fs::write(ASSETS_FILE, serde_json::to_string_pretty(&assets)?)?;
 
     println!("Generating charts...");
     generate_chart(&imagej_by_day, &stats, "downloads_per_day.png", false)?;
